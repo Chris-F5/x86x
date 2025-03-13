@@ -1,5 +1,17 @@
+%define UTSNAME_LENGTH 65
+%define UTSDOMAIN_LENGTH 65
+
 section .text
     global utils_getenv
+
+
+; @param rdi s1
+; @param rsi s2
+; @param rdx n
+; @return 0 if s1 and s2 are equal, otherwize 1.
+utils_strncmp:
+    ; TODO
+    ret
 
 ; Searches environment variable list to find the value associated with a name.
 ;
@@ -33,6 +45,6 @@ utils_getenv:
 .return_match:
     add rax, 1
     ret
-.return_no_match
+.return_no_match:
     mov rax, 0
     ret
