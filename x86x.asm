@@ -51,6 +51,14 @@ struct_xcon:
     .root_window_ud dd 0
     .root_depth_ub db 0
 
+struct_pollfd:
+    .fd_ud dd 0
+    .events dw POLLIN ; events to monitor for.
+    .revents dw 0 ; returned events.
+
+struct_xevent_callbacks:
+    .motion_notify dq 0
+
 struct_xreq_con_init:
     .byte_order db 0x6c
     db 0x00 ; padding
@@ -64,22 +72,22 @@ struct_xreq_con_init:
 struct_xreq_con_init_len equ $ - struct_xreq_con_init
 
 struct_xreq_create_window:
-        .opcode db 1
-        .depth_ub db 0
-        .request_length dw 11 ; measured in 4 byte words
-        .wid_ud dd 0
-        .parent_window_ud dd 0
-        .x_uw dw 0
-        .y_uw dw 0
-        .width_uw dw 0
-        .height_uw dw 0
-        .border_width_uw dw 0
-        .class dw 0 ; CopyFromParent
-        .visual dd 0 ; CopyFromParent
-        .value_mask dd 0x02 | 0x08 | 0x800 ; background-pixel | border-pixel | event-mask
-        .values_background_pixel_ud dd 0
-        .values_border_pixel_ud dd 0
-        .values_event_mask_ud dd  0x40 | 0x20000 ; PointerMotion |  StructureNotify
+    .opcode db 1
+    .depth_ub db 0
+    .request_length dw 11 ; measured in 4 byte words
+    .wid_ud dd 0
+    .parent_window_ud dd 0
+    .x_uw dw 0
+    .y_uw dw 0
+    .width_uw dw 0
+    .height_uw dw 0
+    .border_width_uw dw 0
+    .class dw 0 ; CopyFromParent
+    .visual dd 0 ; CopyFromParent
+    .value_mask dd 0x02 | 0x08 | 0x800 ; background-pixel | border-pixel | event-mask
+    .values_background_pixel_ud dd 0
+    .values_border_pixel_ud dd 0
+    .values_event_mask_ud dd  0x40 | 0x20000 ; PointerMotion |  StructureNotify
 struct_xreq_create_window_len equ $ - struct_xreq_create_window
 
 struct_xreq_map_window:
@@ -88,6 +96,39 @@ struct_xreq_map_window:
     .request_length dw 2
     .window_ud dd 0
 struct_xreq_map_window_len equ $ - struct_xreq_map_window
+
+struct_xreq_create_gc:
+    .opcode db 55
+    db 0 ; padding
+    .request_length dw 4+2
+    .cid_ud dd 0 ; New resource id.
+    .drawable_ud dd 0 ; Resource id of drawable (e.g. window, pixmap).
+    .value_mask dd 0x4 | 0x8 ; foreground, background
+    .values_foreground_ud dd 0
+    .values_background_ud dd 0
+struct_xreq_create_gc_len equ $ - struct_xreq_create_gc
+
+struct_xreq_change_gc:
+    .opcode db 56
+    db 0 ; padding
+    .request_length dw 3+2
+    .gc_ud dd 0 ; set at runtime
+    .value_mask dd 0x4 | 0x8 ; foreground, background
+    .values_foreground_ud dd 0 ; foreground color
+    .values_background_ud dd 0 ; background color
+struct_xreq_change_gc_len equ $ - struct_xreq_change_gc
+
+struct_xreq_line:
+    .opcode db 65 ; poly line
+    .coordinate_mode db 0 ; origin
+    .request_length dw 3+2
+    .drawable_ud dd 0
+    .gc_ud dd 0
+    .x0_uw dw 0
+    .y0_uw dw 0
+    .x1_uw dw 0
+    .y1_uw dw 0
+struct_xreq_line_len equ $ - struct_xreq_line
 
 section .bss
     read_buf resb READ_BUFFER_SIZE
@@ -106,6 +147,11 @@ section .text
     global x86x_open_display
     global x86x_create_window
     global x86x_map_window
+    global x86x_create_gc
+    global x86x_change_gc
+    global x86x_draw_line
+    global x86x_handle_events
+    global x86x_register_event_callback_motion_notify
     extern utils_getenv
 
 
@@ -418,16 +464,16 @@ x86x_open_display:
 
     ret
 
-; @param edi Width.
-; @param esi Height.
+; @param di Width.
+; @param si Height.
 ; @param edx Background pixel color.
 ; @param ecx Border pixel color.
 ; @param r8d Event mask.
 ; @return Window resource id.
 x86x_create_window:
 
-    mov [rel struct_xreq_create_window.width_uw], edi
-    mov [rel struct_xreq_create_window.height_uw], esi
+    mov [rel struct_xreq_create_window.width_uw], di
+    mov [rel struct_xreq_create_window.height_uw], si
     mov [rel struct_xreq_create_window.values_background_pixel_ud], edx
     mov [rel struct_xreq_create_window.values_border_pixel_ud], ecx
     mov [rel struct_xreq_create_window.values_event_mask_ud], r8d
@@ -460,3 +506,125 @@ x86x_map_window:
     mov rdx, struct_xreq_map_window_len
     syscall
     ; TODO: assert rax >= 0
+
+    ret
+
+
+; @param edi Drawable resource id.
+; @return Graphics context resource id.
+x86x_create_gc:
+
+    mov [rel struct_xreq_create_gc.drawable_ud], edi
+
+    call _x86x_allocate_resource_id
+    mov [rel struct_xreq_create_gc.cid_ud], eax
+    push rax
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_create_gc]
+    mov rdx, struct_xreq_create_gc_len
+    syscall
+    ; TODO: assert rax >= 0
+
+    pop rax
+    ret
+
+; @param edi Graphics context resource id.
+; @param esi Foreground color.
+; @param edx Background color.
+x86x_change_gc:
+
+    mov [rel struct_xreq_change_gc.gc_ud], edi
+    mov [rel struct_xreq_change_gc.values_foreground_ud], esi
+    mov [rel struct_xreq_change_gc.values_background_ud], edi
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_change_gc]
+    mov rdx, struct_xreq_change_gc_len
+    syscall
+    ; TODO: assert rax >= 0
+
+    ret
+
+; @param edi Drawable resource id.
+; @param esi Graphics context resource id.
+; @param dx x0.
+; @param cx y0.
+; @param r8w x1.
+; @param r9w y1.
+x86x_draw_line:
+
+    mov [rel struct_xreq_line.drawable_ud], edi
+    mov [rel struct_xreq_line.gc_ud], esi
+    mov word [rel struct_xreq_line.x0_uw], dx
+    mov word [rel struct_xreq_line.y0_uw], cx
+    mov word [rel struct_xreq_line.x1_uw], r8w
+    mov word [rel struct_xreq_line.y1_uw], r9w
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_line]
+    mov rdx, struct_xreq_line_len
+    syscall
+    ; TODO: assert rax >= 0
+
+    ret
+
+
+; Read all X11 events received from the server since the last time this function
+; was called and invoke the appropriate event callbacks.
+x86x_handle_events:
+.next_event:
+
+    mov rax, [rel struct_xcon.socket_dq]
+    mov [rel struct_pollfd.fd_ud], eax
+
+    mov rax, SYS_POLL
+    lea rdi, [rel struct_pollfd]
+    mov rsi, 1 ; number of fds.
+    mov rdx, 0 ; timeout.
+    syscall
+    ; TODO: assert rax >= 0
+    cmp rax, 0
+    je .no_events_remain
+
+    ; TODO: exit if POLLHUP in revents.
+
+    mov rax, SYS_READ
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel read_buf]
+    mov rdx, 32 ; XEvents are always 32 bytes long.
+    syscall
+    ; TODO: assert rax == 32.
+
+    ; TODO: handle X11 errors (event code 0).
+
+    mov al, [rel read_buf] ; event code.
+    cmp al, 6 ; motion notify.
+    jne .motion_notify_endif
+    mov rax, [rel struct_xevent_callbacks.motion_notify]
+    cmp rax, 0
+    je .motion_notify_endif
+    mov rdi, 0
+    mov rsi, 0
+    mov rdx, 0
+    mov edi, [rel read_buf + 12] ; event window.
+    mov si, [rel read_buf + 24] ; event x.
+    mov dx, [rel read_buf + 26] ; event y.
+    call rax
+.motion_notify_endif:
+
+    jmp .next_event
+.no_events_remain:
+    ret
+
+
+; @param rdi void (*callback)(
+;                unsigned int event_window,
+;                unsigned short event_x,
+;                unsigned short event_y).
+x86x_register_event_callback_motion_notify:
+    mov [rel struct_xevent_callbacks.motion_notify], rdi
+    ret

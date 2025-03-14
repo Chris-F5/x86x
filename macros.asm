@@ -42,6 +42,8 @@
 %define SOCK_STREAM 1
 %define SOCK_CLOEXEC 0x80000
 
+%define POLLIN 1
+
 
 ; MACROS
 
