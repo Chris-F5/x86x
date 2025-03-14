@@ -97,6 +97,18 @@ struct_xreq_map_window:
     .window_ud dd 0
 struct_xreq_map_window_len equ $ - struct_xreq_map_window
 
+
+struct_xreq_create_pixmap:
+    .opcode db 53
+    .depth_ub db 0
+    .request_length dw 4
+    .pid_ud dd 0 ; New resource id.
+    .drawable_ud dd 0
+    .width_uw dw 0
+    .height_uw dw 0
+struct_xreq_create_pixmap_len equ $ - struct_xreq_create_pixmap
+
+
 struct_xreq_create_gc:
     .opcode db 55
     db 0 ; padding
@@ -118,10 +130,25 @@ struct_xreq_change_gc:
     .values_background_ud dd 0 ; background color
 struct_xreq_change_gc_len equ $ - struct_xreq_change_gc
 
+struct_xreq_copy_area:
+    .opcode db 62
+    db 0
+    .request_length dw 7
+    .src_drawable_ud dd 0
+    .dst_drawable_ud dd 0
+    .gc_ud dd 0
+    .src_x_uw dw 0
+    .src_y_uw dw 0
+    .dst_x_uw dw 0
+    .dst_y_uw dw 0
+    .width_uw dw 0
+    .height_uw dw 0
+struct_xreq_copy_area_len equ $ - struct_xreq_copy_area
+
 struct_xreq_line:
     .opcode db 65 ; poly line
     .coordinate_mode db 0 ; origin
-    .request_length dw 3+2
+    .request_length dw 3 + 2
     .drawable_ud dd 0
     .gc_ud dd 0
     .x0_uw dw 0
@@ -129,6 +156,18 @@ struct_xreq_line:
     .x1_uw dw 0
     .y1_uw dw 0
 struct_xreq_line_len equ $ - struct_xreq_line
+
+struct_xreq_fill_rect:
+    .opcode db 70 ; Poly fill rect.
+    db 0
+    .request_length dw 3 + 2
+    .drawable_ud dd 0
+    .gc_ud dd 0
+    .x_uw dw 0
+    .y_uw dw 0
+    .width_uw dw 0
+    .height_uw dw 0
+struct_xreq_fill_rect_len equ $ - struct_xreq_fill_rect
 
 section .bss
     read_buf resb READ_BUFFER_SIZE
@@ -147,9 +186,12 @@ section .text
     global x86x_open_display
     global x86x_create_window
     global x86x_map_window
+    global x86x_create_pixmap
     global x86x_create_gc
     global x86x_change_gc
+    global x86x_copy_area
     global x86x_draw_line
+    global x86x_fill_rect
     global x86x_handle_events
     global x86x_register_event_callback_motion_notify
     extern utils_getenv
@@ -511,6 +553,34 @@ x86x_map_window:
 
 
 ; @param edi Drawable resource id.
+; @param si Width.
+; @param dx Height.
+; @return New pixmap resource id.
+x86x_create_pixmap:
+
+    mov [rel struct_xreq_create_pixmap.drawable_ud], edi
+    mov [rel struct_xreq_create_pixmap.width_uw], si
+    mov [rel struct_xreq_create_pixmap.height_uw], dx
+
+    mov al, [rel struct_xcon.root_depth_ub]
+    mov [rel struct_xreq_create_pixmap.depth_ub], al
+
+    call _x86x_allocate_resource_id
+    mov [rel struct_xreq_create_pixmap.pid_ud], eax
+    push rax
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_create_pixmap]
+    mov rdx, struct_xreq_create_pixmap_len
+    syscall
+    ; TODO: assert rax >= 0
+
+    pop rax
+    ret
+
+
+; @param edi Drawable resource id.
 ; @return Graphics context resource id.
 x86x_create_gc:
 
@@ -548,6 +618,42 @@ x86x_change_gc:
 
     ret
 
+
+; @param edi Source drawable resource id.
+; @param esi Destination drawable resource id.
+; @param edx Graphics context resource id.
+; @param cx Source x.
+; @param r8w Source y.
+; @param r9w Destination x.
+; @param [rsp + 8] word Destination y.
+; @param [rsp + 16] word Width.
+; @param [rsp + 24] word Height.
+x86x_copy_area:
+
+    mov [rel struct_xreq_copy_area.src_drawable_ud], edi
+    mov [rel struct_xreq_copy_area.dst_drawable_ud], esi
+    mov [rel struct_xreq_copy_area.gc_ud], edx
+    mov [rel struct_xreq_copy_area.src_x_uw], cx
+    mov [rel struct_xreq_copy_area.src_y_uw], r8w
+    mov [rel struct_xreq_copy_area.dst_x_uw], r9w
+    mov al, [rsp + 8]
+    mov [rel struct_xreq_copy_area.dst_y_uw], al
+    mov al, [rsp + 16]
+    mov [rel struct_xreq_copy_area.width_uw], al
+    mov al, [rsp + 24]
+    mov [rel struct_xreq_copy_area.height_uw], al
+
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_copy_area]
+    mov rdx, struct_xreq_copy_area_len
+    syscall
+    ; TODO: assert rax >= 0
+
+    ret
+
+
 ; @param edi Drawable resource id.
 ; @param esi Graphics context resource id.
 ; @param dx x0.
@@ -558,15 +664,40 @@ x86x_draw_line:
 
     mov [rel struct_xreq_line.drawable_ud], edi
     mov [rel struct_xreq_line.gc_ud], esi
-    mov word [rel struct_xreq_line.x0_uw], dx
-    mov word [rel struct_xreq_line.y0_uw], cx
-    mov word [rel struct_xreq_line.x1_uw], r8w
-    mov word [rel struct_xreq_line.y1_uw], r9w
+    mov [rel struct_xreq_line.x0_uw], dx
+    mov [rel struct_xreq_line.y0_uw], cx
+    mov [rel struct_xreq_line.x1_uw], r8w
+    mov [rel struct_xreq_line.y1_uw], r9w
 
     mov rax, SYS_WRITE
     mov rdi, [rel struct_xcon.socket_dq]
     lea rsi, [rel struct_xreq_line]
     mov rdx, struct_xreq_line_len
+    syscall
+    ; TODO: assert rax >= 0
+
+    ret
+
+
+; @param edi Drawable resource id.
+; @param esi Graphics context resource id.
+; @param dx x.
+; @param cx y.
+; @param r8w width.
+; @param r9w height.
+x86x_fill_rect:
+
+    mov [rel struct_xreq_fill_rect.drawable_ud], edi
+    mov [rel struct_xreq_fill_rect.gc_ud], esi
+    mov [rel struct_xreq_fill_rect.x_uw], dx
+    mov [rel struct_xreq_fill_rect.y_uw], cx
+    mov [rel struct_xreq_fill_rect.width_uw], r8w
+    mov [rel struct_xreq_fill_rect.height_uw], r9w
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_fill_rect]
+    mov rdx, struct_xreq_fill_rect_len
     syscall
     ; TODO: assert rax >= 0
 
