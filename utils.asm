@@ -2,6 +2,7 @@
 %define UTSDOMAIN_LENGTH 65
 
 section .text
+    global utils_strncmp
     global utils_getenv
 
 
@@ -10,7 +11,26 @@ section .text
 ; @param rdx n
 ; @return 0 if s1 and s2 are equal, otherwize 1.
 utils_strncmp:
-    ; TODO
+
+    cmp rdx, 0
+    je .same
+.next_char:
+    mov al, [rdi]
+    mov bl, [rsi]
+    cmp al, bl
+    jne .differ
+    cmp al, 0
+    je .same
+
+    sub rdx, 1
+    cmp rdx, 0
+    jg .next_char
+
+.same:
+    mov rax, 0
+    ret
+.differ:
+    mov rax, 1
     ret
 
 ; Searches environment variable list to find the value associated with a name.

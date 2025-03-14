@@ -35,6 +35,9 @@ section .data
     k_env_name_display_cstr db "DISPLAY", 0x00
     k_env_name_xauthority_cstr db "XAUTHORITY", 0x00
 
+    k_mit_magic_cookie_name_buf db "MIT-MAGIC-COOKIE-1"
+    k_mit_magic_cookie_name_len equ $ - k_mit_magic_cookie_name_buf
+
 struct_xsocket_addr:
     .sa_family_uw dw AF_UNIX
     .sun_path_cstr db "/tmp/.X11-unix/X"
@@ -183,6 +186,9 @@ struct_utsname:
     .domainname_cstr resb UTSDOMAIN_LENGTH
 
 section .text
+    extern utils_getenv
+    extern utils_strncmp
+
     global x86x_open_display
     global x86x_create_window
     global x86x_map_window
@@ -194,7 +200,6 @@ section .text
     global x86x_fill_rect
     global x86x_handle_events
     global x86x_register_event_callback_motion_notify
-    extern utils_getenv
 
 
 ; Populates struct_xsocket_addr with path to X11 socket associated with DISPLAY
@@ -271,7 +276,8 @@ _x86x_find_xcookie:
     rol ax, 8
     mov [rbp - 16], rax ; address length
 
-    ; TODO: check length does not overflow buffer.
+    cmp rax, READ_BUFFER_SIZE
+    ja .err_read_buffer_overflow
 
     mov rax, SYS_READ
     mov rdi, [rbp - 8] ; fd
@@ -296,7 +302,8 @@ _x86x_find_xcookie:
     rol ax, 8
     mov [rbp - 16], rax ; display number length
 
-    ; TODO: check length does not overflow buffer.
+    cmp rax, READ_BUFFER_SIZE
+    ja .err_read_buffer_overflow
 
     mov rax, SYS_READ
     mov rdi, [rbp - 8] ; fd
@@ -331,7 +338,8 @@ _x86x_find_xcookie:
     rol ax, 8
     mov [rbp - 16], rax ; name length
 
-    ; TODO: check length does not overflow buffer.
+    cmp rax, READ_BUFFER_SIZE
+    ja .err_read_buffer_overflow
 
     mov rax, SYS_READ
     mov rdi, [rbp - 8] ; fd
@@ -341,7 +349,14 @@ _x86x_find_xcookie:
     cmp rax, [rbp - 16] ; name length
     jne .err_failed_to_read_xauth_file
 
-    ; TODO: utils_strncmp name with MIT-MAGIC-COOKIE-1
+    lea rdi, [rel read_buf]
+    lea rsi, [rel k_mit_magic_cookie_name_buf]
+    mov rdx, k_mit_magic_cookie_name_len
+    call utils_strncmp
+    cmp rax, 0
+    je .correct_name
+    mov qword [rbp - 24], 1 ; is entry invalid
+.correct_name:
 
     mov rax, SYS_READ
     mov rdi, [rbp - 8] ; fd
@@ -356,7 +371,8 @@ _x86x_find_xcookie:
     rol ax, 8
     mov [rbp - 16], rax ; data length
 
-    ; TODO: check length does not overflow buffer.
+    cmp rax, READ_BUFFER_SIZE
+    ja .err_read_buffer_overflow
 
     mov rax, SYS_READ
     mov rdi, [rbp - 8] ; fd
@@ -400,6 +416,8 @@ jmp .cookie_length_valid_endif
     DIE "x86x: No matching entry found in XAUTHORITY file."
 .err_failed_to_read_xauth_file:
     DIE "x86x: Failed to read XAUTHORITY file."
+.err_read_buffer_overflow:
+    DIE "x86x: Overflowed read buffer while parsing XAUTHORITY file."
 
 
 ; Connect to struct_xsocket_addr; initialise and authenticate the connection
@@ -412,28 +430,26 @@ _x86x_connect:
     mov rdx, 0
     syscall
     mov [rel struct_xcon.socket_dq], rax
-    ; TODO: assert rax >= 0
 
     mov rax, SYS_CONNECT
     mov rdi, [rel struct_xcon.socket_dq]
     lea rsi, [rel struct_xsocket_addr]
     mov rdx, struct_xsocket_addr_len
     syscall
-    ; TODO: assert rax >= 0
 
     mov rax, SYS_WRITE
     mov rdi, [rel struct_xcon.socket_dq]
     lea rsi, [rel struct_xreq_con_init]
     mov rdx, struct_xreq_con_init_len
     syscall
-    ; TODO: assert rax >= 0
 
     mov rax, SYS_READ
     mov rdi, [rel struct_xcon.socket_dq]
     lea rsi, [rel read_buf]
     mov rdx, 8
     syscall
-    ; TODO: assert rax == 8
+    cmp rax, 8
+    jne .err_read_failed
     mov al, [rel read_buf] ; status.
     cmp al, 1 ; success.
     jne .err_xconnection_refused
@@ -443,14 +459,18 @@ _x86x_connect:
     mov rbx, 4
     mul rbx
 
-    ; TODO: check additional data does not overflow buffer.
+    cmp rax, READ_BUFFER_SIZE
+    ja .err_read_buffer_overflow
 
     mov rdx, rax
+    push rdx ; additional data length
     mov rax, SYS_READ
     mov rdi, [rel struct_xcon.socket_dq]
     lea rsi, [rel read_buf]
     syscall
-    ; TODO: assert rax == additional data length
+    pop rdx ; additional data length
+    cmp rax, rdx
+    jne .err_read_failed
 
     mov eax, [rel read_buf + 4] ; resource-id-base.
     mov [rel struct_xcon.resource_id_base_ud], eax
@@ -482,7 +502,10 @@ _x86x_connect:
     ret
 .err_xconnection_refused:
     DIE "x86x: X11 server refused connection."
-
+.err_read_failed:
+    DIE "x86x: Read failed while connecting to X11 server."
+.err_read_buffer_overflow
+    DIE "x86x: Overflowed read buffer while connecting to X11 server."
 
 ; @return Fresh resource id.
 _x86x_allocate_resource_id:
@@ -531,7 +554,6 @@ x86x_create_window:
     lea rsi, [rel struct_xreq_create_window]
     mov rdx, struct_xreq_create_window_len
     syscall
-    ; TODO: assert rax >= 0
 
     pop rax
     ret
@@ -547,7 +569,6 @@ x86x_map_window:
     lea rsi, [rel struct_xreq_map_window]
     mov rdx, struct_xreq_map_window_len
     syscall
-    ; TODO: assert rax >= 0
 
     ret
 
@@ -574,7 +595,6 @@ x86x_create_pixmap:
     lea rsi, [rel struct_xreq_create_pixmap]
     mov rdx, struct_xreq_create_pixmap_len
     syscall
-    ; TODO: assert rax >= 0
 
     pop rax
     ret
@@ -595,7 +615,6 @@ x86x_create_gc:
     lea rsi, [rel struct_xreq_create_gc]
     mov rdx, struct_xreq_create_gc_len
     syscall
-    ; TODO: assert rax >= 0
 
     pop rax
     ret
@@ -614,7 +633,6 @@ x86x_change_gc:
     lea rsi, [rel struct_xreq_change_gc]
     mov rdx, struct_xreq_change_gc_len
     syscall
-    ; TODO: assert rax >= 0
 
     ret
 
@@ -649,7 +667,6 @@ x86x_copy_area:
     lea rsi, [rel struct_xreq_copy_area]
     mov rdx, struct_xreq_copy_area_len
     syscall
-    ; TODO: assert rax >= 0
 
     ret
 
@@ -674,7 +691,6 @@ x86x_draw_line:
     lea rsi, [rel struct_xreq_line]
     mov rdx, struct_xreq_line_len
     syscall
-    ; TODO: assert rax >= 0
 
     ret
 
@@ -699,7 +715,6 @@ x86x_fill_rect:
     lea rsi, [rel struct_xreq_fill_rect]
     mov rdx, struct_xreq_fill_rect_len
     syscall
-    ; TODO: assert rax >= 0
 
     ret
 
@@ -728,7 +743,8 @@ x86x_handle_events:
     lea rsi, [rel read_buf]
     mov rdx, 32 ; XEvents are always 32 bytes long.
     syscall
-    ; TODO: assert rax == 32.
+    cmp rax, 32
+    jne .err_read_failed
 
     ; TODO: handle X11 errors (event code 0).
 
@@ -750,6 +766,8 @@ x86x_handle_events:
     jmp .next_event
 .no_events_remain:
     ret
+.err_read_failed:
+    DIE "x86x: Read failed while handling X11 events."
 
 
 ; @param rdi void (*callback)(
