@@ -1,9 +1,14 @@
 void x86x_open_display(char **environ);
+void x86x_configure_window_override_redirect(unsigned int enable);
+void x86x_configure_window_colors(
+    unsigned int background_color,
+    unsigned int border_color);
+void x86x_configure_window_border_width(unsigned int border_width);
 unsigned int x86x_create_window(
+    unsigned short x,
+    unsigned short y,
     unsigned short width,
     unsigned short height,
-    unsigned int background_pixel,
-    unsigned int border_pixel,
     unsigned int event_mask);
 void x86x_map_window(unsigned int window_id);
 unsigned int x86x_create_pixmap(

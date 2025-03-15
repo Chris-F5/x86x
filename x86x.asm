@@ -51,6 +51,8 @@ struct_xcon:
     .resource_id_current_ud dd 0
     .resource_id_base_ud dd 0
     .resource_id_mask_ud dd 0
+    .white_pixel_ud dd 0
+    .black_pixel_ud dd 0
     .root_window_ud dd 0
     .root_depth_ub db 0
 
@@ -77,7 +79,7 @@ struct_xreq_con_init_len equ $ - struct_xreq_con_init
 struct_xreq_create_window:
     .opcode db 1
     .depth_ub db 0
-    .request_length dw 11 ; measured in 4 byte words
+    .request_length dw 12 ; measured in 4 byte words
     .wid_ud dd 0
     .parent_window_ud dd 0
     .x_uw dw 0
@@ -87,9 +89,11 @@ struct_xreq_create_window:
     .border_width_uw dw 0
     .class dw 0 ; CopyFromParent
     .visual dd 0 ; CopyFromParent
-    .value_mask dd 0x02 | 0x08 | 0x800 ; background-pixel | border-pixel | event-mask
+     ; background-pixel | border-pixel | override-redirect | event-mask
+     .value_mask dd 0x02 | 0x08 | 0x200 | 0x800
     .values_background_pixel_ud dd 0
     .values_border_pixel_ud dd 0
+    .values_override_redirect_ud dd 0
     .values_event_mask_ud dd  0x40 | 0x20000 ; PointerMotion |  StructureNotify
 struct_xreq_create_window_len equ $ - struct_xreq_create_window
 
@@ -190,6 +194,9 @@ section .text
     extern utils_strncmp
 
     global x86x_open_display
+    global x86x_configure_window_override_redirect
+    global x86x_configure_window_colors
+    global x86x_configure_window_border_width
     global x86x_create_window
     global x86x_map_window
     global x86x_create_pixmap
@@ -496,6 +503,12 @@ _x86x_connect:
 
     mov eax, [rbx] ; root window.
     mov [rel struct_xcon.root_window_ud], eax
+    mov eax, [rbx + 8] ; white pixel.
+    mov [rel struct_xcon.white_pixel_ud], eax
+    mov [rel struct_xreq_create_window.values_background_pixel_ud], eax
+    mov eax, [rbx + 12] ; black pixel.
+    mov [rel struct_xcon.black_pixel_ud], eax
+    mov [rel struct_xreq_create_window.values_border_pixel_ud], eax
     mov al, [rbx + 38] ; root depth.
     mov [rel struct_xcon.root_depth_ub], al
 
@@ -529,19 +542,36 @@ x86x_open_display:
 
     ret
 
-; @param di Width.
-; @param si Height.
-; @param edx Background pixel color.
-; @param ecx Border pixel color.
-; @param r8d Event mask.
+; @param edi Override redirect (boolean).
+x86x_configure_window_override_redirect:
+    mov [rel struct_xreq_create_window.values_override_redirect_ud], edi
+    ret
+
+; @param edi Background pixel color.
+; @param esi Border pixel color.
+x86x_configure_window_colors:
+    mov [rel struct_xreq_create_window.values_background_pixel_ud], edi
+    mov [rel struct_xreq_create_window.values_border_pixel_ud], esi
+    ret
+
+; @param edi Border width.
+x86x_configure_window_border_width:
+    mov [rel struct_xreq_create_window.border_width_uw], edi
+    ret
+
+; @param di X.
+; @param si Y.
+; @param dx Width.
+; @param cx Height.
+; @param r8d Event mask
 ; @return Window resource id.
 x86x_create_window:
 
-    mov [rel struct_xreq_create_window.width_uw], di
-    mov [rel struct_xreq_create_window.height_uw], si
-    mov [rel struct_xreq_create_window.values_background_pixel_ud], edx
-    mov [rel struct_xreq_create_window.values_border_pixel_ud], ecx
-    mov [rel struct_xreq_create_window.values_event_mask_ud], r8d
+    mov [rel struct_xreq_create_window.x_uw], di
+    mov [rel struct_xreq_create_window.y_uw], si
+    mov [rel struct_xreq_create_window.width_uw], dx
+    mov [rel struct_xreq_create_window.height_uw], cx
+    mov [rel struct_xreq_create_window.values_event_mask_ud], edx
 
     call _x86x_allocate_resource_id
     mov [rel struct_xreq_create_window.wid_ud], eax

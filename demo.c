@@ -31,7 +31,9 @@ main(int argc, char *argv[])
     ts.tv_nsec = 2e7L; // 2ms == 50fps.
 
     x86x_open_display(environ);
-    window = x86x_create_window(WIDTH, HEIGHT, ~0, 0, 0x40 | 0x20000); // PointerMotion |  StructureNotify
+    x86x_configure_window_override_redirect(1);
+    x86x_configure_window_border_width(1);
+    window = x86x_create_window(100, 100, WIDTH, HEIGHT, 0x40 | 0x20000); // PointerMotion |  StructureNotify
     pixmap = x86x_create_pixmap(window, WIDTH, HEIGHT);
     x86x_map_window(window);
     gc = x86x_create_gc(window);
