@@ -40,9 +40,9 @@ main(int argc, char *argv[])
     pixmap = x86x_create_pixmap(window, WIDTH, HEIGHT);
     x86x_map_window(window);
     gc = x86x_create_gc(window);
-    x86x_register_event_callback_motion_notify(motion_notify_callback);
+    x86x_register_callback_motion_notify_event(motion_notify_callback);
     for (;;) {
-        x86x_handle_events();
+        x86x_process_queue(0);
         x86x_change_gc(gc, ~0, ~0);
         x86x_fill_rect(pixmap, gc, 0, 0, WIDTH, HEIGHT);
         x86x_change_gc(gc, 0, 0);
@@ -50,5 +50,6 @@ main(int argc, char *argv[])
         x86x_copy_area(pixmap, window, gc, 0, 0, 0, 0, WIDTH, HEIGHT);
         nanosleep(&ts, NULL);
     }
+    // TODO: Gracefull exit.
     return 0;
 }

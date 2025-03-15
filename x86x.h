@@ -48,8 +48,8 @@ void x86x_fill_rect(
     unsigned short y,
     unsigned short width,
     unsigned short height);
-void x86x_handle_events(void);
-void x86x_register_event_callback_motion_notify(
+void x86x_process_queue(unsigned int block_until_response);
+void x86x_register_callback_motion_notify_event(
     void (*callback)(
         unsigned int event_window,
         unsigned short event_x,

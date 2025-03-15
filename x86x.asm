@@ -63,8 +63,8 @@ struct_pollfd:
     .events dw POLLIN ; events to monitor for.
     .revents dw 0 ; returned events.
 
-struct_xevent_callbacks:
-    .motion_notify dq 0
+struct_callbacks:
+    .motion_notify_event dq 0
 
 struct_xreq_con_init:
     .byte_order db 0x6c
@@ -211,8 +211,8 @@ section .text
     global x86x_copy_area
     global x86x_draw_line
     global x86x_fill_rect
-    global x86x_handle_events
-    global x86x_register_event_callback_motion_notify
+    global x86x_process_queue
+    global x86x_register_callback_motion_notify_event
 
 
 ; Populates struct_xsocket_addr with path to X11 socket associated with DISPLAY
@@ -527,7 +527,7 @@ _x86x_connect:
     DIE "x86x: X11 server refused connection."
 .err_read_failed:
     DIE "x86x: Read failed while connecting to X11 server."
-.err_read_buffer_overflow
+.err_read_buffer_overflow:
     DIE "x86x: Overflowed read buffer while connecting to X11 server."
 
 ; @return Fresh resource id.
@@ -788,22 +788,42 @@ x86x_fill_rect:
     ret
 
 
-; Read all X11 events received from the server since the last time this function
-; was called and invoke the appropriate event callbacks.
-x86x_handle_events:
-.next_event:
+; Read all X11 events and responses received from the server since the last
+; time this function was called and invoke the appropriate callbacks. If block
+; until reply is non-zero then dont return until the queue is empty and at
+; least one response was processed.
+;
+; @param rdi Block until response (boolean).
+x86x_process_queue:
+    push rbp
+    mov rbp, rsp
+
+    cmp rdi, 0
+    je .timeout_else
+    mov rax, 1000
+    jmp .timeout_endif
+.timeout_else:
+    mov rax, 0
+.timeout_endif:
+    push rax ; Poll timeout milliseconds.
 
     mov rax, [rel struct_xcon.socket_dq]
     mov [rel struct_pollfd.fd_ud], eax
 
+
+.loop:
     mov rax, SYS_POLL
     lea rdi, [rel struct_pollfd]
     mov rsi, 1 ; number of fds.
-    mov rdx, 0 ; timeout.
+    mov rdx, [rbp - 8] ; timeout.
     syscall
     ; TODO: assert rax >= 0
+    mov rbx, rax
+    or rbx, [rbp - 8] ; timeout
+    cmp rbx, 0
+    je .break ; Break if queue is empty and we are not blocking.
     cmp rax, 0
-    je .no_events_remain
+    je .loop  ; Repoll if the queue is empty and we are blocking.
 
     ; TODO: exit if POLLHUP in revents.
 
@@ -817,10 +837,31 @@ x86x_handle_events:
 
     ; TODO: handle X11 errors (event code 0).
 
-    mov al, [rel read_buf] ; event code.
+    mov al, [rel read_buf] ; Error/Response/Event code.
+    cmp al, 1 ; Response.
+    jne .response_endif
+
+    mov rax, 0
+    mov [rbp - 8], rax ; timeout. Stop blocking now we have found a response.
+
+    mov rdx, [rel read_buf + 4] ; Reply additional bytes.
+    cmp rdx, 0
+    je .no_additional_bytes
+    mov rax, SYS_READ
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel read_buf]
+    add rsi, 32
+    syscall
+    cmp rax, [rel read_buf + 4] ; Reply additional bytes.
+    jne .err_read_failed
+.no_additional_bytes:
+    ; TODO: Call responses handlers.
+.response_endif:
+
+    mov al, [rel read_buf] ; Error/Response/Event code.
     cmp al, 6 ; motion notify.
     jne .motion_notify_endif
-    mov rax, [rel struct_xevent_callbacks.motion_notify]
+    mov rax, [rel struct_callbacks.motion_notify_event]
     cmp rax, 0
     je .motion_notify_endif
     mov rdi, 0
@@ -832,17 +873,20 @@ x86x_handle_events:
     call rax
 .motion_notify_endif:
 
-    jmp .next_event
-.no_events_remain:
+    jmp .loop
+.break:
+
+    mov rsp, rbp
+    pop rbp
     ret
 .err_read_failed:
-    DIE "x86x: Read failed while handling X11 events."
+    DIE "x86x: X11 socket read failed while processing queue."
 
 
 ; @param rdi void (*callback)(
 ;                unsigned int event_window,
 ;                unsigned short event_x,
 ;                unsigned short event_y).
-x86x_register_event_callback_motion_notify:
-    mov [rel struct_xevent_callbacks.motion_notify], rdi
+x86x_register_callback_motion_notify_event:
+    mov [rel struct_callbacks.motion_notify_event], rdi
     ret
