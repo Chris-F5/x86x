@@ -3,8 +3,8 @@
 #include <time.h>
 #include "./x86x.h"
 
-#define WIDTH 100
-#define HEIGHT 100
+#define WIDTH 500
+#define HEIGHT 400
 
 extern char **environ;
 
@@ -26,14 +26,17 @@ void motion_notify_callback(
 int
 main(int argc, char *argv[])
 {
+    unsigned short x, y;
     struct timespec ts;
     ts.tv_sec = 0;
     ts.tv_nsec = 2e7L; // 2ms == 50fps.
 
     x86x_open_display(environ);
+    x = (x86x_root_width() - WIDTH - 2) / 2;
+    y = (x86x_root_height() - HEIGHT - 2) / 2;
     x86x_configure_window_override_redirect(1);
     x86x_configure_window_border_width(1);
-    window = x86x_create_window(100, 100, WIDTH, HEIGHT, 0x40 | 0x20000); // PointerMotion |  StructureNotify
+    window = x86x_create_window(x, y, WIDTH, HEIGHT, 0x40 | 0x20000); // PointerMotion |  StructureNotify
     pixmap = x86x_create_pixmap(window, WIDTH, HEIGHT);
     x86x_map_window(window);
     gc = x86x_create_gc(window);

@@ -54,6 +54,8 @@ struct_xcon:
     .white_pixel_ud dd 0
     .black_pixel_ud dd 0
     .root_window_ud dd 0
+    .root_width_uw dw 0
+    .root_height_uw dw 0
     .root_depth_ub db 0
 
 struct_pollfd:
@@ -194,6 +196,10 @@ section .text
     extern utils_strncmp
 
     global x86x_open_display
+    global x86x_root_width
+    global x86x_root_height
+    global x86x_white_pixel
+    global x86x_black_pixel
     global x86x_configure_window_override_redirect
     global x86x_configure_window_colors
     global x86x_configure_window_border_width
@@ -509,6 +515,10 @@ _x86x_connect:
     mov eax, [rbx + 12] ; black pixel.
     mov [rel struct_xcon.black_pixel_ud], eax
     mov [rel struct_xreq_create_window.values_border_pixel_ud], eax
+    mov ax, [rbx + 20] ; root width
+    mov [rel struct_xcon.root_width_uw], ax
+    mov ax, [rbx + 22] ; root height
+    mov [rel struct_xcon.root_height_uw], ax
     mov al, [rbx + 38] ; root depth.
     mov [rel struct_xcon.root_depth_ub], al
 
@@ -542,10 +552,39 @@ x86x_open_display:
 
     ret
 
+; @return Root window width in pixels.
+x86x_root_width:
+    mov rax, 0
+    mov ax, [rel struct_xcon.root_width_uw]
+    ret
+
+
+; @return Root window height in pixels.
+x86x_root_height:
+    mov rax, 0
+    mov ax, [rel struct_xcon.root_height_uw]
+    ret
+
+
+; @return White pixel color.
+x86x_white_pixel:
+    mov rax, 0
+    mov eax, [rel struct_xcon.white_pixel_ud]
+    ret
+
+
+; @return Black pixel color.
+x86x_black_pixel:
+    mov rax, 0
+    mov eax, [rel struct_xcon.black_pixel_ud]
+    ret
+
+
 ; @param edi Override redirect (boolean).
 x86x_configure_window_override_redirect:
     mov [rel struct_xreq_create_window.values_override_redirect_ud], edi
     ret
+
 
 ; @param edi Background pixel color.
 ; @param esi Border pixel color.
@@ -554,9 +593,9 @@ x86x_configure_window_colors:
     mov [rel struct_xreq_create_window.values_border_pixel_ud], esi
     ret
 
-; @param edi Border width.
+; @param di Border width.
 x86x_configure_window_border_width:
-    mov [rel struct_xreq_create_window.border_width_uw], edi
+    mov [rel struct_xreq_create_window.border_width_uw], di
     ret
 
 ; @param di X.
@@ -571,7 +610,7 @@ x86x_create_window:
     mov [rel struct_xreq_create_window.y_uw], si
     mov [rel struct_xreq_create_window.width_uw], dx
     mov [rel struct_xreq_create_window.height_uw], cx
-    mov [rel struct_xreq_create_window.values_event_mask_ud], edx
+    mov [rel struct_xreq_create_window.values_event_mask_ud], r8d
 
     call _x86x_allocate_resource_id
     mov [rel struct_xreq_create_window.wid_ud], eax
@@ -684,12 +723,12 @@ x86x_copy_area:
     mov [rel struct_xreq_copy_area.src_x_uw], cx
     mov [rel struct_xreq_copy_area.src_y_uw], r8w
     mov [rel struct_xreq_copy_area.dst_x_uw], r9w
-    mov al, [rsp + 8]
-    mov [rel struct_xreq_copy_area.dst_y_uw], al
-    mov al, [rsp + 16]
-    mov [rel struct_xreq_copy_area.width_uw], al
-    mov al, [rsp + 24]
-    mov [rel struct_xreq_copy_area.height_uw], al
+    mov ax, [rsp + 8]
+    mov [rel struct_xreq_copy_area.dst_y_uw], ax
+    mov ax, [rsp + 16]
+    mov [rel struct_xreq_copy_area.width_uw], ax
+    mov ax, [rsp + 24]
+    mov [rel struct_xreq_copy_area.height_uw], ax
 
 
     mov rax, SYS_WRITE

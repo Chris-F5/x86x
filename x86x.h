@@ -1,9 +1,13 @@
 void x86x_open_display(char **environ);
+unsigned short x86x_root_width(void);
+unsigned short x86x_root_height(void);
+unsigned int x86x_white_pixel(void);
+unsigned int x86x_black_pixel(void);
 void x86x_configure_window_override_redirect(unsigned int enable);
 void x86x_configure_window_colors(
     unsigned int background_color,
     unsigned int border_color);
-void x86x_configure_window_border_width(unsigned int border_width);
+void x86x_configure_window_border_width(unsigned short border_width);
 unsigned int x86x_create_window(
     unsigned short x,
     unsigned short y,
