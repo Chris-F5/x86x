@@ -59,6 +59,7 @@ main(int argc, char *argv[])
         x86x_fill_rect(pixmap, gc, 0, 0, WIDTH, HEIGHT);
         x86x_change_gc(gc, 0, 0);
         x86x_draw_line(pixmap, gc, 50, 50, mouse_x, mouse_y);
+        x86x_draw_text(pixmap, gc, 50, 50, font, "hello world");
         x86x_copy_area(pixmap, window, gc, 0, 0, 0, 0, WIDTH, HEIGHT);
         nanosleep(&ts, NULL);
     }

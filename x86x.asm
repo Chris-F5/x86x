@@ -196,6 +196,20 @@ struct_xreq_fill_rect:
     .height_uw dw 0
 struct_xreq_fill_rect_len equ $ - struct_xreq_fill_rect
 
+struct_xreq_text:
+    .opcode db 74 ; PolyText8.
+    db 0
+    .request_length_uw dw 4
+    .drawable_ud dd 0
+    .gc_ud dd 0
+    .x_uw dw 0
+    .y_uw dw 0
+    .font_shift_indicator db 255
+    .font_bytes db 0, 0, 0, 0
+    .string_length_ub db 0
+    .delta_ub db 0
+    .string_buf times 256 db 0
+
 section .bss
     read_buf resb READ_BUFFER_SIZE
 
@@ -231,6 +245,7 @@ section .text
     global x86x_copy_area
     global x86x_draw_line
     global x86x_fill_rect
+    global x86x_draw_text
     global x86x_process_queue
     global x86x_register_callback_text_extents_reply
     global x86x_register_callback_motion_notify_event
@@ -878,6 +893,63 @@ x86x_fill_rect:
     syscall
 
     ret
+
+; @param edi Drawable resource id.
+; @param esi Graphics context resource id.
+; @param dx x.
+; @param cx y.
+; @param r8d Font resource id.
+; @param r9 Text cstring.
+x86x_draw_text:
+
+    mov [rel struct_xreq_text.drawable_ud], edi
+    mov [rel struct_xreq_text.gc_ud], esi
+    mov [rel struct_xreq_text.x_uw], dx
+    mov [rel struct_xreq_text.y_uw], cx
+    mov [rel struct_xreq_text.font_bytes+3], r8b
+    shr r8d, 8
+    mov [rel struct_xreq_text.font_bytes+2], r8b
+    shr r8d, 8
+    mov [rel struct_xreq_text.font_bytes+1], r8b
+    shr r8d, 8
+    mov [rel struct_xreq_text.font_bytes+0], r8b
+
+    lea rbx, [rel struct_xreq_text.string_buf]
+    mov rcx, 0
+.char_loop:
+    mov al, [r9]
+    cmp al, 0
+    je .char_loop_break
+
+    cmp rcx, 255
+    jae .err_string_too_long
+
+    mov [rbx], al
+
+    add r9, 1
+    add rbx, 1
+    add rcx, 1
+    jmp .char_loop
+.char_loop_break:
+
+    mov [rel struct_xreq_text.string_length_ub], cl
+    add rcx, 16 ; Packet header size.
+    add rcx, 5 ; Font entry.
+    add rcx, 2 ; Text entry header.
+    add rcx, 3 ; Padding.
+    shr rcx, 2
+    mov [rel struct_xreq_text.request_length_uw], cx
+    shl rcx, 2
+
+    mov rdx, rcx
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_text]
+    syscall
+
+    ret
+.err_string_too_long:
+    DIE "x86x: String too long in draw text call."
 
 
 ; Read all X11 events and replies received from the server since the last

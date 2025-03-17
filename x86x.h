@@ -50,6 +50,13 @@ void x86x_fill_rect(
     unsigned short y,
     unsigned short width,
     unsigned short height);
+void x86x_draw_text(
+    unsigned int drawable,
+    unsigned int gc,
+    unsigned short x,
+    unsigned short y,
+    unsigned int font,
+    char *text);
 void x86x_process_queue(unsigned int block_until_reply);
 void x86x_register_callback_text_extents_reply(
     void (*callback)(
