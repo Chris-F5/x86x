@@ -8,7 +8,7 @@
 
 extern char **environ;
 
-unsigned int window, gc, pixmap;
+unsigned int window, gc, pixmap, font;
 unsigned short mouse_x, mouse_y;
 
 void motion_notify_callback(
@@ -23,6 +23,14 @@ void motion_notify_callback(
     return;
 }
 
+void text_extents_callback(
+    unsigned short ascent,
+    unsigned short descent,
+    unsigned int width)
+{
+    printf("%d %d %d\n", ascent, descent, width);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -32,6 +40,11 @@ main(int argc, char *argv[])
     ts.tv_nsec = 2e7L; // 2ms == 50fps.
 
     x86x_open_display(environ);
+    x86x_register_callback_motion_notify_event(motion_notify_callback);
+    x86x_register_callback_text_extents_reply(text_extents_callback);
+    font = x86x_open_font();
+    x86x_query_text_extents(font, "hello world");
+    x86x_process_queue(1);
     x = (x86x_root_width() - WIDTH - 2) / 2;
     y = (x86x_root_height() - HEIGHT - 2) / 2;
     x86x_configure_window_override_redirect(1);
@@ -40,7 +53,6 @@ main(int argc, char *argv[])
     pixmap = x86x_create_pixmap(window, WIDTH, HEIGHT);
     x86x_map_window(window);
     gc = x86x_create_gc(window);
-    x86x_register_callback_motion_notify_event(motion_notify_callback);
     for (;;) {
         x86x_process_queue(0);
         x86x_change_gc(gc, ~0, ~0);

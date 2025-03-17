@@ -15,6 +15,8 @@ unsigned int x86x_create_window(
     unsigned short height,
     unsigned int event_mask);
 void x86x_map_window(unsigned int window_id);
+unsigned int x86x_open_font(void);
+void x86x_query_text_extents(unsigned int fontable, char *text);
 unsigned int x86x_create_pixmap(
     unsigned int drawable,
     unsigned short width,
@@ -48,7 +50,13 @@ void x86x_fill_rect(
     unsigned short y,
     unsigned short width,
     unsigned short height);
-void x86x_process_queue(unsigned int block_until_response);
+void x86x_process_queue(unsigned int block_until_reply);
+void x86x_register_callback_text_extents_reply(
+    void (*callback)(
+        unsigned short ascent,
+        unsigned short descent,
+        unsigned int width)
+    );
 void x86x_register_callback_motion_notify_event(
     void (*callback)(
         unsigned int event_window,

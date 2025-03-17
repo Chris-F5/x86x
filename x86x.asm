@@ -63,7 +63,9 @@ struct_pollfd:
     .events dw POLLIN ; events to monitor for.
     .revents dw 0 ; returned events.
 
+query_in_flight_uq dq 0
 struct_callbacks:
+    .text_extents_reply dq 0
     .motion_notify_event dq 0
 
 struct_xreq_con_init:
@@ -106,6 +108,22 @@ struct_xreq_map_window:
     .window_ud dd 0
 struct_xreq_map_window_len equ $ - struct_xreq_map_window
 
+struct_xreq_open_font:
+    .opcode db 45
+    db 0
+    .request_length dw 3+2
+    .fid_ud dd 0
+    .name_length dw 5
+    dw 0
+    .name db "10x20", 0, 0, 0
+struct_xreq_open_font_len equ $ - struct_xreq_open_font
+
+struct_xreq_query_text_extents:
+    .opcode db 48
+    .odd_length_ub db 0
+    .request_length_uw dw 2
+    .font_ud dd 0
+    .string_buf times 512 db 0
 
 struct_xreq_create_pixmap:
     .opcode db 53
@@ -205,6 +223,8 @@ section .text
     global x86x_configure_window_border_width
     global x86x_create_window
     global x86x_map_window
+    global x86x_open_font
+    global x86x_query_text_extents
     global x86x_create_pixmap
     global x86x_create_gc
     global x86x_change_gc
@@ -212,6 +232,7 @@ section .text
     global x86x_draw_line
     global x86x_fill_rect
     global x86x_process_queue
+    global x86x_register_callback_text_extents_reply
     global x86x_register_callback_motion_notify_event
 
 
@@ -642,6 +663,77 @@ x86x_map_window:
     ret
 
 
+; @return Font resource id.
+x86x_open_font:
+
+    call _x86x_allocate_resource_id
+    mov [rel struct_xreq_open_font.fid_ud],  eax
+    push rax
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_open_font]
+    mov rdx, struct_xreq_open_font_len
+    syscall
+
+    pop rax
+    ret
+
+
+; @param edi Fontable resource id.
+; @param rsi ASCII cstring pointer (256 max length).
+x86x_query_text_extents:
+
+    mov rax, [rel query_in_flight_uq]
+    cmp rax, 0
+    jne .err_query_already_in_flight
+    mov rax, 48 ; Query text extents.
+    mov [rel query_in_flight_uq], rax
+
+    mov [rel struct_xreq_query_text_extents.font_ud], edi
+
+    lea rbx, [rel struct_xreq_query_text_extents.string_buf]
+    mov rcx, 0
+.char_loop:
+    mov al, [rsi]
+    cmp al, 0
+    je .char_loop_break
+
+    cmp rcx, 256
+    jae .err_string_too_long
+
+    mov byte [rbx], 0
+    mov [rbx+1], al
+
+    add rsi, 1
+    add rbx, 2
+    add rcx, 1
+    jmp .char_loop
+.char_loop_break:
+
+    mov rbx, rcx
+    and rbx, 1
+    mov [rel struct_xreq_query_text_extents.odd_length_ub], bl
+
+    add rcx, 1
+    shr rcx, 1
+    add rcx, 2
+    mov [rel struct_xreq_query_text_extents.request_length_uw], cx
+    shl rcx, 2
+
+    mov rdx, rcx
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_query_text_extents]
+    syscall
+
+    ret
+.err_query_already_in_flight:
+    DIE "x86x: Can't have multiple queries in-flight."
+.err_string_too_long:
+    DIE "x86x: String too long in query text extents call."
+
+
 ; @param edi Drawable resource id.
 ; @param si Width.
 ; @param dx Height.
@@ -788,12 +880,12 @@ x86x_fill_rect:
     ret
 
 
-; Read all X11 events and responses received from the server since the last
+; Read all X11 events and replies received from the server since the last
 ; time this function was called and invoke the appropriate callbacks. If block
 ; until reply is non-zero then dont return until the queue is empty and at
-; least one response was processed.
+; least one reply was processed.
 ;
-; @param rdi Block until response (boolean).
+; @param rdi Block until reply (boolean).
 x86x_process_queue:
     push rbp
     mov rbp, rsp
@@ -837,14 +929,15 @@ x86x_process_queue:
 
     ; TODO: handle X11 errors (event code 0).
 
-    mov al, [rel read_buf] ; Error/Response/Event code.
-    cmp al, 1 ; Response.
-    jne .response_endif
+    mov al, [rel read_buf] ; Error/Reply/Event code.
+    cmp al, 1 ; Reply.
+    jne .reply_endif
 
     mov rax, 0
-    mov [rbp - 8], rax ; timeout. Stop blocking now we have found a response.
+    mov [rbp - 8], rax ; timeout. Stop blocking now we have found a reply.
 
-    mov rdx, [rel read_buf + 4] ; Reply additional bytes.
+    mov rdx, 0
+    mov edx, [rel read_buf + 4] ; Reply additional bytes.
     cmp rdx, 0
     je .no_additional_bytes
     mov rax, SYS_READ
@@ -852,13 +945,30 @@ x86x_process_queue:
     lea rsi, [rel read_buf]
     add rsi, 32
     syscall
-    cmp rax, [rel read_buf + 4] ; Reply additional bytes.
+    cmp eax, [rel read_buf + 4] ; Reply additional bytes.
     jne .err_read_failed
 .no_additional_bytes:
-    ; TODO: Call responses handlers.
-.response_endif:
 
-    mov al, [rel read_buf] ; Error/Response/Event code.
+    mov rax, [rel query_in_flight_uq]
+    mov rbx, 48 ; Query text extents.
+    cmp rax, rbx
+    jne .err_unexpected_reply
+    mov rdi, 0
+    mov di, [rel read_buf + 8] ; Font ascent.
+    mov rsi, 0
+    mov si, [rel read_buf + 10] ; Font descet.
+    mov rdx, 0
+    mov edx, [rel read_buf + 16] ; Width.
+    mov rax, [rel struct_callbacks.text_extents_reply]
+    cmp rax, 0
+    je .reply_endif
+    call rax
+    mov rax, 0
+    mov [rel query_in_flight_uq], rax
+
+.reply_endif:
+
+    mov al, [rel read_buf] ; Error/Reply/Event code.
     cmp al, 6 ; motion notify.
     jne .motion_notify_endif
     mov rax, [rel struct_callbacks.motion_notify_event]
@@ -879,9 +989,19 @@ x86x_process_queue:
     mov rsp, rbp
     pop rbp
     ret
+.err_unexpected_reply:
+    DIE "x86x: Unexpected reply while processing queue."
 .err_read_failed:
     DIE "x86x: X11 socket read failed while processing queue."
 
+
+; @param rdi void (*callback)(
+;                unsigned short ascent,
+;                unsigned short descent,
+;                unsigned int width).
+x86x_register_callback_text_extents_reply:
+    mov [rel struct_callbacks.text_extents_reply], rdi
+    ret
 
 ; @param rdi void (*callback)(
 ;                unsigned int event_window,
