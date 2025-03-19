@@ -15,6 +15,10 @@ unsigned int x86x_create_window(
     unsigned short height,
     unsigned int event_mask);
 void x86x_map_window(unsigned int window_id);
+void x86x_grab_pointer(unsigned char owner_events, unsigned int window_id);
+void x86x_ungrab_pointer();
+void x86x_grab_keyboard(unsigned char owner_events, unsigned int window_id);
+void x86x_ungrab_keyboard();
 unsigned int x86x_open_font(void);
 void x86x_query_text_extents(unsigned int fontable, char *text);
 unsigned int x86x_create_pixmap(
@@ -58,6 +62,12 @@ void x86x_draw_text(
     unsigned int font,
     char *text);
 void x86x_process_queue(unsigned int block_until_reply);
+void x86x_register_callback_grab_pointer_reply(
+    void (*callback)(unsigned char status)
+    );
+void x86x_register_callback_grab_keyboard_reply(
+    void (*callback)(unsigned char status)
+    );
 void x86x_register_callback_text_extents_reply(
     void (*callback)(
         unsigned short ascent,

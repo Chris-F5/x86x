@@ -65,6 +65,8 @@ struct_pollfd:
 
 query_in_flight_uq dq 0
 struct_callbacks:
+    .grab_pointer_reply dq 0
+    .grab_keyboard_reply dq 0
     .text_extents_reply dq 0
     .motion_notify_event dq 0
 
@@ -107,6 +109,44 @@ struct_xreq_map_window:
     .request_length dw 2
     .window_ud dd 0
 struct_xreq_map_window_len equ $ - struct_xreq_map_window
+
+struct_xreq_grab_pointer:
+    .opcode db 26
+    .owner_events_ub db 0
+    .request_length dw 6
+    .grab_window_ud dd 0
+    .event_mask_uw dw 0x00007ffc ; All mouse events.
+    .pointer_mode_ub db 1 ; Asynchronous.
+    .keyboard_mode_ub db 1 ; Asynchronous.
+    .confine_to_ud dd 0 ; None (window resource id).
+    .cursor_ud dd 0 ; None
+    .time dd 0 ; CurrentTime.
+struct_xreq_grab_pointer_len equ $ - struct_xreq_grab_pointer
+
+struct_xreq_ungrab_pointer:
+    .opcode db 27
+    db 0
+    .request_length dw 2
+    .time dd 0 ; CurrentTime.
+struct_xreq_ungrab_pointer_len equ $ - struct_xreq_ungrab_pointer
+
+struct_xreq_grab_keyboard:
+    .opcode db 31
+    .owner_events_ub db 0
+    .request_length dw 4
+    .grab_window_ud dd 0
+    .time dd 0 ; CurrentTime.
+    .pointer_mode_ub db 1 ; Asynchronous.
+    .keyboard_mode_ub db 1 ; Asynchronous.
+    db 0, 0
+struct_xreq_grab_keyboard_len equ $ - struct_xreq_grab_keyboard
+
+struct_xreq_ungrab_keyboard:
+    .opcode db 32
+    db 0
+    .request_length dw 2
+    .time dd 0 ; CurrentTime.
+struct_xreq_ungrab_keyboard_len equ $ - struct_xreq_ungrab_keyboard
 
 struct_xreq_open_font:
     .opcode db 45
@@ -237,6 +277,10 @@ section .text
     global x86x_configure_window_border_width
     global x86x_create_window
     global x86x_map_window
+    global x86x_grab_pointer
+    global x86x_ungrab_pointer
+    global x86x_grab_keyboard
+    global x86x_ungrab_keyboard
     global x86x_open_font
     global x86x_query_text_extents
     global x86x_create_pixmap
@@ -247,6 +291,8 @@ section .text
     global x86x_fill_rect
     global x86x_draw_text
     global x86x_process_queue
+    global x86x_register_callback_grab_keyboard_reply
+    global x86x_register_callback_grab_pointer_reply
     global x86x_register_callback_text_extents_reply
     global x86x_register_callback_motion_notify_event
 
@@ -678,6 +724,76 @@ x86x_map_window:
     ret
 
 
+; @param dil Owner events (boolean).
+; @param esi Window resource id.
+x86x_grab_pointer:
+
+    mov rax, [rel query_in_flight_uq]
+    cmp rax, 0
+    jne .err_query_already_in_flight
+    mov rax, 26 ; Query grab pointer.
+    mov [rel query_in_flight_uq], rax
+
+    mov [rel struct_xreq_grab_pointer.owner_events_ub], dil
+    mov [rel struct_xreq_grab_pointer.grab_window_ud], esi
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_grab_pointer]
+    mov rdx, struct_xreq_grab_pointer_len
+    syscall
+
+    ret
+.err_query_already_in_flight:
+    DIE "x86x: Can't have multiple queries in-flight."
+
+
+x86x_ungrab_pointer:
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_ungrab_pointer]
+    mov rdx, struct_xreq_ungrab_pointer_len
+    syscall
+
+    ret
+
+
+; @param dil Owner events (boolean).
+; @param esi Window resource id.
+x86x_grab_keyboard:
+
+    mov rax, [rel query_in_flight_uq]
+    cmp rax, 0
+    jne .err_query_already_in_flight
+    mov rax, 31 ; Query grab keyboard.
+    mov [rel query_in_flight_uq], rax
+
+    mov [rel struct_xreq_grab_keyboard.owner_events_ub], dil
+    mov [rel struct_xreq_grab_keyboard.grab_window_ud], esi
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_grab_keyboard]
+    mov rdx, struct_xreq_grab_keyboard_len
+    syscall
+
+    ret
+.err_query_already_in_flight:
+    DIE "x86x: Can't have multiple queries in-flight."
+
+
+x86x_ungrab_keyboard:
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_ungrab_keyboard]
+    mov rdx, struct_xreq_ungrab_keyboard_len
+    syscall
+
+    ret
+
+
 ; @return Font resource id.
 x86x_open_font:
 
@@ -1022,9 +1138,35 @@ x86x_process_queue:
 .no_additional_bytes:
 
     mov rax, [rel query_in_flight_uq]
+    mov rbx, 31 ; Grab keyboard.
+    cmp rax, rbx
+    jne .grab_keyboard_reply_endif
+    mov rdi, 0
+    mov dil, [rel read_buf + 1] ; Status.
+    mov rax, [rel struct_callbacks.grab_keyboard_reply]
+    cmp rax, 0
+    je .reply_parsed
+    call rax
+    jmp .reply_parsed
+.grab_keyboard_reply_endif:
+
+    mov rax, [rel query_in_flight_uq]
+    mov rbx, 26 ; Grab pointer.
+    cmp rax, rbx
+    jne .grab_pointer_reply_endif
+    mov rdi, 0
+    mov dil, [rel read_buf + 1] ; Status.
+    mov rax, [rel struct_callbacks.grab_pointer_reply]
+    cmp rax, 0
+    je .reply_parsed
+    call rax
+    jmp .reply_parsed
+.grab_pointer_reply_endif:
+
+    mov rax, [rel query_in_flight_uq]
     mov rbx, 48 ; Query text extents.
     cmp rax, rbx
-    jne .err_unexpected_reply
+    jne .text_extents_reply_endif
     mov rdi, 0
     mov di, [rel read_buf + 8] ; Font ascent.
     mov rsi, 0
@@ -1033,11 +1175,15 @@ x86x_process_queue:
     mov edx, [rel read_buf + 16] ; Width.
     mov rax, [rel struct_callbacks.text_extents_reply]
     cmp rax, 0
-    je .reply_endif
+    je .reply_parsed
     call rax
+    jmp .reply_parsed
+.text_extents_reply_endif:
+
+    jmp .err_unexpected_reply
+.reply_parsed:
     mov rax, 0
     mov [rel query_in_flight_uq], rax
-
 .reply_endif:
 
     mov al, [rel read_buf] ; Error/Reply/Event code.
@@ -1065,6 +1211,18 @@ x86x_process_queue:
     DIE "x86x: Unexpected reply while processing queue."
 .err_read_failed:
     DIE "x86x: X11 socket read failed while processing queue."
+
+
+; @param rdi void (*callback)(unsigned char status);
+x86x_register_callback_grab_pointer_reply:
+    mov [rel struct_callbacks.grab_pointer_reply], rdi
+    ret
+
+
+; @param rdi void (*callback)(unsigned char status);
+x86x_register_callback_grab_keyboard_reply:
+    mov [rel struct_callbacks.grab_keyboard_reply], rdi
+    ret
 
 
 ; @param rdi void (*callback)(
