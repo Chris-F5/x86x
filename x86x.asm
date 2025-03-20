@@ -68,7 +68,9 @@ struct_callbacks:
     .grab_pointer_reply dq 0
     .grab_keyboard_reply dq 0
     .text_extents_reply dq 0
+    .key_press_event dq 0
     .motion_notify_event dq 0
+    .focus_in_event dq 0
 
 struct_xreq_con_init:
     .byte_order db 0x6c
@@ -294,7 +296,9 @@ section .text
     global x86x_register_callback_grab_keyboard_reply
     global x86x_register_callback_grab_pointer_reply
     global x86x_register_callback_text_extents_reply
+    global x86x_register_callback_key_press_event
     global x86x_register_callback_motion_notify_event
+    global x86x_register_callback_focus_in_event
 
 
 ; Populates struct_xsocket_addr with path to X11 socket associated with DISPLAY
@@ -1187,6 +1191,23 @@ x86x_process_queue:
 .reply_endif:
 
     mov al, [rel read_buf] ; Error/Reply/Event code.
+    cmp al, 2 ; KeyPress.
+    jne .key_press_endif
+    mov rax, [rel struct_callbacks.key_press_event]
+    cmp rax, 0
+    je .key_press_endif
+    mov rdi, 0
+    mov rsi, 0
+    mov rdx, 0
+    mov rcx, 0
+    mov edi, [rel read_buf + 12] ; event window.
+    mov sil, [rel read_buf + 1] ; key code.
+    mov dx, [rel read_buf + 28] ; state.
+    mov ecx, [rel read_buf + 4] ; time.
+    call rax
+.key_press_endif:
+
+    mov al, [rel read_buf] ; Error/Reply/Event code.
     cmp al, 6 ; motion notify.
     jne .motion_notify_endif
     mov rax, [rel struct_callbacks.motion_notify_event]
@@ -1200,6 +1221,21 @@ x86x_process_queue:
     mov dx, [rel read_buf + 26] ; event y.
     call rax
 .motion_notify_endif:
+
+    mov al, [rel read_buf] ; Error/Reply/Event code.
+    cmp al, 9 ; FocusIn.
+    jne .focus_in_endif
+    mov rax, [rel struct_callbacks.focus_in_event]
+    cmp rax, 0
+    je .focus_in_endif
+    mov rdi, 0
+    mov rsi, 0
+    mov rdx, 0
+    mov edi, [rel read_buf + 4] ; event window.
+    mov sil, [rel read_buf + 1] ; detail.
+    mov dl, [rel read_buf + 8] ; mode.
+    call rax
+.focus_in_endif:
 
     jmp .loop
 .break:
@@ -1235,8 +1271,29 @@ x86x_register_callback_text_extents_reply:
 
 ; @param rdi void (*callback)(
 ;                unsigned int event_window,
+;                unsigned byte keycode,
+;                unsigned short state,
+;                unsigned int time).
+x86x_register_callback_key_press_event:
+    mov [rel struct_callbacks.key_press_event], rdi
+    ret
+
+; @param rdi void (*callback)(
+;                unsigned int event_window,
 ;                unsigned short event_x,
 ;                unsigned short event_y).
 x86x_register_callback_motion_notify_event:
     mov [rel struct_callbacks.motion_notify_event], rdi
+    ret
+
+    mov edi, [rel read_buf + 4] ; event window.
+    mov sil, [rel read_buf + 1] ; detail.
+    mov dl, [rel read_buf + 8] ; mode.
+
+; @param rdi void (*callback)(
+;                unsigned int event_window,
+;                unsigned char detail,
+;                unsigned char mode).
+x86x_register_callback_focus_in_event:
+    mov [rel struct_callbacks.focus_in_event], rdi
     ret

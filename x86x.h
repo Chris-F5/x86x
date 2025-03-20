@@ -74,9 +74,22 @@ void x86x_register_callback_text_extents_reply(
         unsigned short descent,
         unsigned int width)
     );
+void x86x_register_callback_key_press_event(
+    void (*callback)(
+        unsigned int event_window,
+        unsigned char key_code,
+        unsigned short state,
+        unsigned int time)
+    );
 void x86x_register_callback_motion_notify_event(
     void (*callback)(
         unsigned int event_window,
         unsigned short event_x,
         unsigned short event_y)
+    );
+void x86x_register_callback_focus_in_event(
+    void (*callback)(
+        unsigned int event_window,
+        unsigned char detail,
+        unsigned char mode)
     );
