@@ -71,6 +71,7 @@ struct_callbacks:
     .key_press_event dq 0
     .motion_notify_event dq 0
     .focus_in_event dq 0
+    .expose_event dq 0
 
 struct_xreq_con_init:
     .byte_order db 0x6c
@@ -299,6 +300,7 @@ section .text
     global x86x_register_callback_key_press_event:function
     global x86x_register_callback_motion_notify_event:function
     global x86x_register_callback_focus_in_event:function
+    global x86x_register_callback_expose_event:function
 
 
 ; Populates struct_xsocket_addr with path to X11 socket associated with DISPLAY
@@ -1237,6 +1239,25 @@ x86x_process_queue:
     call rax
 .focus_in_endif:
 
+    mov al, [rel read_buf] ; Error/Reply/Event code.
+    cmp al, 12 ; Expose
+    jne .expose_endif
+    mov rax, [rel struct_callbacks.expose_event]
+    cmp rax, 0
+    je .expose_endif
+    mov rdi, 0
+    mov rsi, 0
+    mov rdx, 0
+    mov rcx, 0
+    mov r8, 0
+    mov edi, [rel read_buf + 4] ; window.
+    mov si, [rel read_buf + 8] ; x.
+    mov dx, [rel read_buf + 10] ; y.
+    mov cx, [rel read_buf + 12] ; width.
+    mov r8w, [rel read_buf + 14] ; height.
+    call rax
+.expose_endif:
+
     jmp .loop
 .break:
 
@@ -1296,4 +1317,14 @@ x86x_register_callback_motion_notify_event:
 ;                unsigned char mode).
 x86x_register_callback_focus_in_event:
     mov [rel struct_callbacks.focus_in_event], rdi
+    ret
+
+; @param rdi void (*callback)(
+;                unsigned int event_window,
+;                unsigned short x,
+;                unsigned short y,
+;                unsigned short width,
+;                unsigned short height).
+x86x_register_callback_expose_event:
+    mov [rel struct_callbacks.expose_event], rdi
     ret

@@ -1,3 +1,7 @@
+#define X86X_KEY_PRESS_MASK      0x00000001
+#define X86X_POINTER_MOTION_MASK 0x00000040
+#define X86X_EXPOSURE_MASK       0x00008000
+
 void x86x_open_display(char **environ);
 unsigned short x86x_root_width(void);
 unsigned short x86x_root_height(void);
@@ -92,4 +96,12 @@ void x86x_register_callback_focus_in_event(
         unsigned int event_window,
         unsigned char detail,
         unsigned char mode)
+    );
+void x86x_register_callback_expose_event(
+    void (*callback)(
+        unsigned int event_window,
+        unsigned short x,
+        unsigned short y,
+        unsigned short width,
+        unsigned short height)
     );

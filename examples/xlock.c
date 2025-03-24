@@ -69,8 +69,7 @@ main(int argc, char *argv[])
     y = (x86x_root_height() - height - 2) / 2;
     x86x_configure_window_override_redirect(1);
     x86x_configure_window_border_width(1);
-     // KeyPress | PointerMotion |  StructureNotify
-    window = x86x_create_window(x, y, width, height, 0x01 | 0x40 | 0x20000);
+    window = x86x_create_window(x, y, width, height, X86X_KEY_PRESS_MASK | X86X_POINTER_MOTION_MASK);
     pixmap = x86x_create_pixmap(window, width, height);
     x86x_map_window(window);
 
