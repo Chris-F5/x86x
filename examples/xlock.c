@@ -107,6 +107,7 @@ main(int argc, char *argv[])
     }
     x86x_ungrab_keyboard();
     x86x_ungrab_pointer();
-    // TODO: Gracefull exit.
+    x86x_destroy_window(window);
+    x86x_close_display();
     return 0;
 }

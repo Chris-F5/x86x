@@ -106,6 +106,13 @@ struct_xreq_create_window:
     .values_event_mask_ud dd  0x40 | 0x20000 ; PointerMotion |  StructureNotify
 struct_xreq_create_window_len equ $ - struct_xreq_create_window
 
+struct_xreq_destroy_window:
+    .opcode db 4
+    db 0
+    .request_length dw 2
+    .window_ud dd 0
+struct_xreq_destroy_window_len equ $ - struct_xreq_destroy_window
+
 struct_xreq_map_window:
     .opcode db 8
     db 0 ; padding
@@ -271,6 +278,7 @@ section .text
     extern utils_strncmp
 
     global x86x_open_display:function
+    global x86x_close_display:function
     global x86x_root_width:function
     global x86x_root_height:function
     global x86x_white_pixel:function
@@ -279,6 +287,7 @@ section .text
     global x86x_configure_window_colors:function
     global x86x_configure_window_border_width:function
     global x86x_create_window:function
+    global x86x_destroy_window:function
     global x86x_map_window:function
     global x86x_grab_pointer:function
     global x86x_ungrab_pointer:function
@@ -640,6 +649,16 @@ x86x_open_display:
 
     ret
 
+
+x86x_close_display:
+
+    mov rax, SYS_CLOSE
+    mov rdi, [rel struct_xcon.socket_dq]
+    syscall
+
+    ret
+
+
 ; @return Root window width in pixels.
 x86x_root_width:
     mov rax, 0
@@ -713,6 +732,20 @@ x86x_create_window:
     syscall
 
     pop rax
+    ret
+
+
+; @param edi Window resource id.
+x86x_destroy_window:
+
+    mov [rel struct_xreq_destroy_window.window_ud], edi
+
+    mov rax, SYS_WRITE
+    mov rdi, [rel struct_xcon.socket_dq]
+    lea rsi, [rel struct_xreq_destroy_window]
+    mov rdx, struct_xreq_destroy_window_len
+    syscall
+
     ret
 
 

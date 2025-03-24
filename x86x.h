@@ -3,6 +3,7 @@
 #define X86X_EXPOSURE_MASK       0x00008000
 
 void x86x_open_display(char **environ);
+void x86x_close_display(void);
 unsigned short x86x_root_width(void);
 unsigned short x86x_root_height(void);
 unsigned int x86x_white_pixel(void);
@@ -18,11 +19,12 @@ unsigned int x86x_create_window(
     unsigned short width,
     unsigned short height,
     unsigned int event_mask);
+void x86x_destroy_window(unsigned int window);
 void x86x_map_window(unsigned int window_id);
 void x86x_grab_pointer(unsigned char owner_events, unsigned int window_id);
-void x86x_ungrab_pointer();
+void x86x_ungrab_pointer(void);
 void x86x_grab_keyboard(unsigned char owner_events, unsigned int window_id);
-void x86x_ungrab_keyboard();
+void x86x_ungrab_keyboard(void);
 unsigned int x86x_open_font(void);
 void x86x_query_text_extents(unsigned int fontable, char *text);
 unsigned int x86x_create_pixmap(

@@ -56,8 +56,10 @@ main(int argc, char *argv[])
 
     while (!quit) {
         // TODO: Blocking dequeue.
+        // TODO: Close display on window manager exit.
         x86x_process_queue(0);
     }
-    // TODO: Gracefull exit.
+    x86x_destroy_window(window);
+    x86x_close_display();
     return 0;
 }
