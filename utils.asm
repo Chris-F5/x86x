@@ -2,8 +2,8 @@
 %define UTSDOMAIN_LENGTH 65
 
 section .text
-    global utils_strncmp
-    global utils_getenv
+    global utils_strncmp:function
+    global utils_getenv:function
 
 
 ; @param rdi s1

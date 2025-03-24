@@ -269,36 +269,36 @@ section .text
     extern utils_getenv
     extern utils_strncmp
 
-    global x86x_open_display
-    global x86x_root_width
-    global x86x_root_height
-    global x86x_white_pixel
-    global x86x_black_pixel
-    global x86x_configure_window_override_redirect
-    global x86x_configure_window_colors
-    global x86x_configure_window_border_width
-    global x86x_create_window
-    global x86x_map_window
-    global x86x_grab_pointer
-    global x86x_ungrab_pointer
-    global x86x_grab_keyboard
-    global x86x_ungrab_keyboard
-    global x86x_open_font
-    global x86x_query_text_extents
-    global x86x_create_pixmap
-    global x86x_create_gc
-    global x86x_change_gc
-    global x86x_copy_area
-    global x86x_draw_line
-    global x86x_fill_rect
-    global x86x_draw_text
-    global x86x_process_queue
-    global x86x_register_callback_grab_keyboard_reply
-    global x86x_register_callback_grab_pointer_reply
-    global x86x_register_callback_text_extents_reply
-    global x86x_register_callback_key_press_event
-    global x86x_register_callback_motion_notify_event
-    global x86x_register_callback_focus_in_event
+    global x86x_open_display:function
+    global x86x_root_width:function
+    global x86x_root_height:function
+    global x86x_white_pixel:function
+    global x86x_black_pixel:function
+    global x86x_configure_window_override_redirect:function
+    global x86x_configure_window_colors:function
+    global x86x_configure_window_border_width:function
+    global x86x_create_window:function
+    global x86x_map_window:function
+    global x86x_grab_pointer:function
+    global x86x_ungrab_pointer:function
+    global x86x_grab_keyboard:function
+    global x86x_ungrab_keyboard:function
+    global x86x_open_font:function
+    global x86x_query_text_extents:function
+    global x86x_create_pixmap:function
+    global x86x_create_gc:function
+    global x86x_change_gc:function
+    global x86x_copy_area:function
+    global x86x_draw_line:function
+    global x86x_fill_rect:function
+    global x86x_draw_text:function
+    global x86x_process_queue:function
+    global x86x_register_callback_grab_keyboard_reply:function
+    global x86x_register_callback_grab_pointer_reply:function
+    global x86x_register_callback_text_extents_reply:function
+    global x86x_register_callback_key_press_event:function
+    global x86x_register_callback_motion_notify_event:function
+    global x86x_register_callback_focus_in_event:function
 
 
 ; Populates struct_xsocket_addr with path to X11 socket associated with DISPLAY
